@@ -26,3 +26,6 @@
 |database.database|实例|是|vnpy|
 |database.user|用户名|是|postgres|
 |database.password|密码|是|    |
+
+
+请注意，连接前需要在postgres手动添加数据库vnpy。
