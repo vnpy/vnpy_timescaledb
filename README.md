@@ -12,11 +12,11 @@
 
 ## 说明
 
-基于timescaledb2.7.0开发的TimescaleDB时序数据库接口，使用前需要在postgres添加timescaledb扩展。
+基于TimescaleDB 2.7.0开发的时序数据库接口，使用前需要在PostgreSQL中添加TimescaleDB扩展。
 
 ## 使用
 
-在veighna中使用TimescaleDB时，需要在全局配置中填写以下字段信息：
+在VeighNa中使用TimescaleDB时，需要在全局配置中填写以下字段信息：
 
 |名称|含义|必填|举例|
 |---------|----|---|---|
@@ -28,4 +28,4 @@
 |database.password|密码|是|    |
 
 
-请注意，连接前需要在postgres手动添加数据库vnpy。
+请注意，连接前需要在PostgreSQL中手动添加数据库实例vnpy。
