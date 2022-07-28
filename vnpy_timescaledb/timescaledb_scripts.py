@@ -62,7 +62,7 @@ CREATE TABLE IF NOT EXISTS tick_data(
 
 CREATE_TICK_HYPERTABLE_SCRIPT = "SELECT create_hypertable('tick_data', 'datetime', if_not_exists => TRUE);"
 
-CREATE_OVERVIEW_TABLE_SCRIPT = """
+CREATE_BAR_OVERVIEW_TABLE_SCRIPT = """
 CREATE TABLE IF NOT EXISTS bar_overview
 (
    symbol VARCHAR(100) NOT NULL,
@@ -72,6 +72,18 @@ CREATE TABLE IF NOT EXISTS bar_overview
    starttime TIMESTAMPTZ,
    endtime TIMESTAMPTZ,
    PRIMARY KEY ( symbol, exchange, interval )
+);
+"""
+
+CREATE_TICK_OVERVIEW_TABLE_SCRIPT = """
+CREATE TABLE IF NOT EXISTS tick_overview
+(
+   symbol VARCHAR(100) NOT NULL,
+   exchange VARCHAR(100) NOT NULL,
+   count INT,
+   starttime TIMESTAMPTZ,
+   endtime TIMESTAMPTZ,
+   PRIMARY KEY ( symbol, exchange )
 );
 """
 
@@ -155,12 +167,23 @@ ask_volume_5 = excluded.ask_volume_5,
 localt = excluded.localt;
 """
 
-SAVE_OVERVIEW_QUERY = """
+SAVE_BAR_OVERVIEW_QUERY = """
 INSERT INTO bar_overview
 (symbol, exchange, interval, count, starttime, endtime)
 VALUES
 (%(symbol)s, %(exchange)s, %(interval)s, %(count)s, %(starttime)s, %(endtime)s)
 ON CONFLICT (symbol, exchange, interval) DO UPDATE
+SET count = excluded.count,
+starttime = excluded.starttime,
+endtime = excluded.endtime;
+"""
+
+SAVE_TICK_OVERVIEW_QUERY = """
+INSERT INTO tick_overview
+(symbol, exchange, count, starttime, endtime)
+VALUES
+(%(symbol)s, %(exchange)s, %(count)s, %(starttime)s, %(endtime)s)
+ON CONFLICT (symbol, exchange) DO UPDATE
 SET count = excluded.count,
 starttime = excluded.starttime,
 endtime = excluded.endtime;
@@ -185,11 +208,17 @@ AND datetime <= %(end)s
 ORDER BY datetime ASC;
 """
 
-LOAD_OVERVIEW_QUERY = """
+LOAD_BAR_OVERVIEW_QUERY = """
 SELECT * FROM bar_overview
 WHERE symbol = %(symbol)s
 AND exchange = %(exchange)s
 AND interval = %(interval)s
+"""
+
+LOAD_TICK_OVERVIEW_QUERY = """
+SELECT * FROM tick_overview
+WHERE symbol = %(symbol)s
+AND exchange = %(exchange)s
 """
 
 COUNT_BAR_QUERY = """
@@ -205,7 +234,9 @@ WHERE symbol = %(symbol)s
 AND exchange = %(exchange)s
 """
 
-LOAD_ALL_OVERVIEW_QUERY = "SELECT * FROM bar_overview"
+LOAD_ALL_BAR_OVERVIEW_QUERY = "SELECT * FROM bar_overview"
+
+LOAD_ALL_TICK_OVERVIEW_QUERY = "SELECT * FROM tick_overview"
 
 DELETE_BAR_QUERY = """
 DELETE FROM bar_data
@@ -220,9 +251,15 @@ WHERE symbol = %(symbol)s
 AND exchange = %(exchange)s
 """
 
-DELETE_OVERVIEW_QUERY = """
+DELETE_BAR_OVERVIEW_QUERY = """
 DELETE FROM bar_overview
 WHERE symbol = %(symbol)s
 AND exchange = %(exchange)s
 AND interval = %(interval)s
+"""
+
+DELETE_TICK_OVERVIEW_QUERY = """
+DELETE FROM tick_overview
+WHERE symbol = %(symbol)s
+AND exchange = %(exchange)s
 """
