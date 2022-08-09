@@ -61,7 +61,7 @@ class TimescaleDBDatabase(BaseDatabase):
         self.cursor.execute(CREATE_TICK_OVERVIEW_TABLE_SCRIPT)
         self.connection.commit()
 
-    def save_bar_data(self, bars: List[BarData]) -> bool:
+    def save_bar_data(self, bars: List[BarData], stream: bool = False) -> bool:
         """保存K线数据"""
         # 缓存字段参数
         bar: BarData = bars[0]
@@ -89,35 +89,35 @@ class TimescaleDBDatabase(BaseDatabase):
         self.execute(LOAD_BAR_OVERVIEW_QUERY, params)
         row: tuple = self.cursor.fetchone()
 
+        data: dict = {
+            "symbol": symbol,
+            "exchange": exchange.value,
+            "interval": interval.value
+        }
+
         # 没有该合约信息
-        if not row:
-            data: dict = {
-                "symbol": symbol,
-                "exchange": exchange.value,
-                "interval": interval.value,
-                "count": len(bars),
-                "starttime": bars[0].datetime,
-                "endtime": bars[-1].datetime,
-            }
+        if not row:            
+            data["starttime"] = bars[0].datetime
+            data["endtime"] = bars[-1].datetime
+            data["count"] = len(bars)
         # 已有该合约信息
+        elif stream:
+            data["starttime"] = row[4]
+            data["endtime"] = bars[-1].datetime
+            data["count"] = row[3] + len(bars)
         else:
             self.execute(COUNT_BAR_QUERY, params)
             count = self.cursor.fetchone()[0]
 
-            data: dict = {
-                "symbol": symbol,
-                "exchange": exchange.value,
-                "interval": interval.value,
-                "count": count,
-                "starttime": min(bars[0].datetime, row[4]),
-                "endtime": max(bars[-1].datetime, row[5]),
-            }
+            data["starttime"] = min(bars[0].datetime, row[4])
+            data["endtime"] = max(bars[-1].datetime, row[5])
+            data["count"] = count
 
         self.execute(SAVE_BAR_OVERVIEW_QUERY, data)
 
         return True
 
-    def save_tick_data(self, ticks: List[TickData]) -> bool:
+    def save_tick_data(self, ticks: List[TickData], stream: bool = False) -> bool:
         """保存tick数据"""
         # 缓存字段参数
         tick: TickData = ticks[0]
@@ -144,27 +144,28 @@ class TimescaleDBDatabase(BaseDatabase):
         self.execute(LOAD_TICK_OVERVIEW_QUERY, params)
         row: tuple = self.cursor.fetchone()
 
+        data: dict = {
+            "symbol": symbol,
+            "exchange": exchange.value,
+        }
+
         # 没有该合约信息
         if not row:
-            data: dict = {
-                "symbol": symbol,
-                "exchange": exchange.value,
-                "count": len(ticks),
-                "starttime": ticks[0].datetime,
-                "endtime": ticks[-1].datetime,
-            }
+            data["starttime"] = ticks[0].datetime
+            data["endtime"] = ticks[-1].datetime
+            data["count"] = len(ticks)
         # 已有该合约信息
+        elif stream:
+            data["starttime"] = row[3]
+            data["endtime"] = ticks[-1].datetime
+            data["count"] = row[2] + len(ticks)
         else:
             self.execute(COUNT_TICK_QUERY, params)
             count = self.cursor.fetchone()[0]
 
-            data: dict = {
-                "symbol": symbol,
-                "exchange": exchange.value,
-                "count": count,
-                "starttime": min(ticks[0].datetime, row[4]),
-                "endtime": max(ticks[-1].datetime, row[5]),
-            }
+            data["starttime"] = min(ticks[0].datetime, row[3])
+            data["endtime"] = max(ticks[-1].datetime, row[4])
+            data["count"] = count
 
         self.execute(SAVE_TICK_OVERVIEW_QUERY, data)
 
