@@ -96,7 +96,7 @@ class TimescaleDBDatabase(BaseDatabase):
         }
 
         # 没有该合约信息
-        if not row:            
+        if not row:
             data["starttime"] = bars[0].datetime
             data["endtime"] = bars[-1].datetime
             data["count"] = len(bars)
