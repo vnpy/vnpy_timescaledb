@@ -7,20 +7,26 @@ from vnpy.trader.constant import Exchange, Interval
 from vnpy.trader.object import BarData, TickData
 from vnpy.trader.database import (
     BaseDatabase,
-    BarOverview
+    BarOverview,
+    TickOverview
 )
 from vnpy.trader.setting import SETTINGS
 
 from .timescaledb_scripts import (
     CREATE_BAR_TABLE_SCRIPT,
     CREATE_BAR_HYPERTABLE_SCRIPT,
-    CREATE_OVERVIEW_TABLE_SCRIPT,
-    LOAD_OVERVIEW_QUERY,
+    CREATE_BAR_OVERVIEW_TABLE_SCRIPT,
+    CREATE_TICK_OVERVIEW_TABLE_SCRIPT,
+    LOAD_BAR_OVERVIEW_QUERY,
+    LOAD_TICK_OVERVIEW_QUERY,
     COUNT_BAR_QUERY,
-    SAVE_OVERVIEW_QUERY,
+    SAVE_BAR_OVERVIEW_QUERY,
+    SAVE_TICK_OVERVIEW_QUERY,
     DELETE_BAR_QUERY,
-    DELETE_OVERVIEW_QUERY,
-    LOAD_ALL_OVERVIEW_QUERY,
+    DELETE_BAR_OVERVIEW_QUERY,
+    DELETE_TICK_OVERVIEW_QUERY,
+    LOAD_ALL_BAR_OVERVIEW_QUERY,
+    LOAD_ALL_TICK_OVERVIEW_QUERY,
     LOAD_BAR_QUERY,
     CREATE_TICK_TABLE_SCRIPT,
     CREATE_TICK_HYPERTABLE_SCRIPT,
@@ -51,10 +57,11 @@ class TimescaleDBDatabase(BaseDatabase):
         self.cursor.execute(CREATE_BAR_HYPERTABLE_SCRIPT)
         self.cursor.execute(CREATE_TICK_TABLE_SCRIPT)
         self.cursor.execute(CREATE_TICK_HYPERTABLE_SCRIPT)
-        self.cursor.execute(CREATE_OVERVIEW_TABLE_SCRIPT)
+        self.cursor.execute(CREATE_BAR_OVERVIEW_TABLE_SCRIPT)
+        self.cursor.execute(CREATE_TICK_OVERVIEW_TABLE_SCRIPT)
         self.connection.commit()
 
-    def save_bar_data(self, bars: List[BarData]) -> bool:
+    def save_bar_data(self, bars: List[BarData], stream: bool = False) -> bool:
         """保存K线数据"""
         # 缓存字段参数
         bar: BarData = bars[0]
@@ -79,39 +86,44 @@ class TimescaleDBDatabase(BaseDatabase):
             "exchange": exchange.value,
             "interval": interval.value
         }
-        self.execute(LOAD_OVERVIEW_QUERY, params)
+        self.execute(LOAD_BAR_OVERVIEW_QUERY, params)
         row: tuple = self.cursor.fetchone()
 
+        data: dict = {
+            "symbol": symbol,
+            "exchange": exchange.value,
+            "interval": interval.value
+        }
+
         # 没有该合约信息
-        if not row:
-            data: dict = {
-                "symbol": symbol,
-                "exchange": exchange.value,
-                "interval": interval.value,
-                "count": len(bars),
-                "starttime": bars[0].datetime,
-                "endtime": bars[-1].datetime,
-            }
+        if not row:            
+            data["starttime"] = bars[0].datetime
+            data["endtime"] = bars[-1].datetime
+            data["count"] = len(bars)
         # 已有该合约信息
+        elif stream:
+            data["starttime"] = row[4]
+            data["endtime"] = bars[-1].datetime
+            data["count"] = row[3] + len(bars)
         else:
             self.execute(COUNT_BAR_QUERY, params)
             count = self.cursor.fetchone()[0]
 
-            data: dict = {
-                "symbol": symbol,
-                "exchange": exchange.value,
-                "interval": interval.value,
-                "count": count,
-                "starttime": min(bars[0].datetime, row[4]),
-                "endtime": max(bars[-1].datetime, row[5]),
-            }
+            data["starttime"] = min(bars[0].datetime, row[4])
+            data["endtime"] = max(bars[-1].datetime, row[5])
+            data["count"] = count
 
-        self.execute(SAVE_OVERVIEW_QUERY, data)
+        self.execute(SAVE_BAR_OVERVIEW_QUERY, data)
 
         return True
 
-    def save_tick_data(self, ticks: List[TickData]) -> bool:
+    def save_tick_data(self, ticks: List[TickData], stream: bool = False) -> bool:
         """保存tick数据"""
+        # 缓存字段参数
+        tick: TickData = ticks[0]
+        symbol: str = tick.symbol
+        exchange: Exchange = tick.exchange
+
         data: List[dict] = []
 
         for tick in ticks:
@@ -123,6 +135,39 @@ class TimescaleDBDatabase(BaseDatabase):
             data.append(d)
 
         self.execute(SAVE_TICK_QUERY, data)
+
+        # 查询Tick汇总信息
+        params: dict = {
+            "symbol": symbol,
+            "exchange": exchange.value
+        }
+        self.execute(LOAD_TICK_OVERVIEW_QUERY, params)
+        row: tuple = self.cursor.fetchone()
+
+        data: dict = {
+            "symbol": symbol,
+            "exchange": exchange.value,
+        }
+
+        # 没有该合约信息
+        if not row:
+            data["starttime"] = ticks[0].datetime
+            data["endtime"] = ticks[-1].datetime
+            data["count"] = len(ticks)
+        # 已有该合约信息
+        elif stream:
+            data["starttime"] = row[3]
+            data["endtime"] = ticks[-1].datetime
+            data["count"] = row[2] + len(ticks)
+        else:
+            self.execute(COUNT_TICK_QUERY, params)
+            count = self.cursor.fetchone()[0]
+
+            data["starttime"] = min(ticks[0].datetime, row[3])
+            data["endtime"] = max(ticks[-1].datetime, row[4])
+            data["count"] = count
+
+        self.execute(SAVE_TICK_OVERVIEW_QUERY, data)
 
         return True
 
@@ -255,7 +300,7 @@ class TimescaleDBDatabase(BaseDatabase):
         self.execute(DELETE_BAR_QUERY, params)
 
         # 执行汇总删除
-        self.cursor.execute(DELETE_OVERVIEW_QUERY, params)
+        self.cursor.execute(DELETE_BAR_OVERVIEW_QUERY, params)
 
         return count
 
@@ -277,11 +322,14 @@ class TimescaleDBDatabase(BaseDatabase):
         # 执行Tick删除
         self.execute(DELETE_TICK_QUERY, params)
 
+        # 执行Tick汇总删除
+        self.cursor.execute(DELETE_TICK_OVERVIEW_QUERY, params)
+
         return count
 
     def get_bar_overview(self) -> List[BarOverview]:
         """查询K线汇总"""
-        self.execute(LOAD_ALL_OVERVIEW_QUERY)
+        self.execute(LOAD_ALL_BAR_OVERVIEW_QUERY)
         data: List[tuple] = self.cursor.fetchall()
 
         overviews: List[BarOverview] = []
@@ -294,6 +342,25 @@ class TimescaleDBDatabase(BaseDatabase):
                 count=row[3],
                 start=row[4],
                 end=row[5],
+            )
+            overviews.append(overview)
+
+        return overviews
+
+    def get_tick_overview(self) -> List[TickOverview]:
+        """查询Tick线汇总"""
+        self.execute(LOAD_ALL_TICK_OVERVIEW_QUERY)
+        data: List[tuple] = self.cursor.fetchall()
+
+        overviews: List[TickOverview] = []
+
+        for row in data:
+            overview = TickOverview(
+                symbol=row[0],
+                exchange=Exchange(row[1]),
+                count=row[2],
+                start=row[3],
+                end=row[4],
             )
             overviews.append(overview)
 
